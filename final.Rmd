@@ -1,0 +1,183 @@
+---
+title: "MA 615 Final Project"
+author: "Febriany Lete"
+date: "2023-12-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+require(maps)  
+require(mapdata)
+library(ggplot2) 
+library(readxl) 
+library(readr)
+library(ggthemes)
+library(ggrepel)
+library(sf)
+library(tigris)
+library(leaflet)
+```
+
+Open the file contains latitude and longitude
+```{r}
+indonesia <- read_xlsx("indo_map.xlsx")
+```
+
+Creating the world polygon
+```{r}
+global <- map_data("world")
+
+global_map <- ggplot() + 
+  geom_polygon(data = global, aes(x=long, y = lat, group = group), 
+               fill = "gray85", color = "gray80") + 
+  coord_fixed(1.3) 
+
+print(global_map)
+```
+```{r}
+library(ggplot2)
+
+# Get world map data
+world <- map_data("world")
+
+# Create a world map
+global_map <- ggplot() + 
+  geom_polygon(data = world, aes(x = long, y = lat, group = group), 
+               fill = "gray85", color = "gray80") + 
+  coord_fixed(1.3) +
+  theme_minimal()
+
+# Define the coordinates for Indonesia
+indonesia_coords <- data.frame(
+  long = c(94, 142, 142, 94, 94),
+  lat = c(-11, -11, 7.5, 7.5, -11)
+)
+
+# Add a layer to color Indonesia
+global_map + 
+  geom_polygon(data = indonesia_coords, aes(x = long, y = lat), 
+               fill = "blue", alpha = 0.5) +
+  labs(title = "World Map with Indonesia Colored") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+
+Create Indonesia polygon
+```{r}
+indo_map <- global_map + xlim(94,142) + ylim(-11,7.5) +
+  geom_point(data = indonesia,aes(x = longitude, y = latitude), 
+  color = "purple", size=2, alpha = 0.5, show.legend = F) +
+  geom_text_repel(data = indonesia, aes(x = longitude, y = latitude, 
+  label= woe_label), color = "grey30",show.legend=F, size=2.5) + 
+  ggtitle ("Map of Indonesia") + theme_map()
+
+print(indo_map)
+```
+```{r}
+admin <- st_read("idn_admbnda_adm1_bps_20200401.shx")
+```
+Joint the shp and the data frame
+```{r}
+merged <- geo_join(spatial_data=admin, 
+                             data_frame=indonesia, by_sp="ADM1_PCODE", 
+                             by_df="ADM1_PCODE", how = "inner")
+```
+
+Map for Indonesia by population size
+```{r}
+library(ggplot2)
+library(viridis)
+
+# Assuming merged$population is the population variable in your dataset
+# Adjust the colors and breaks as needed based on your data
+pop <- ggplot() +
+  geom_sf(data = merged, aes(fill = population)) +
+  geom_text(data = merged, aes(x = longitude, y = latitude, label = ADM1_EN), size = 1.5) +
+  labs(title = ~atop(paste('Population for all state/province in Indonesia', italic(" from Population Census 2020")))) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_fill_viridis_c(name = "Population", 
+                       option = "plasma",  # Choose a different color palette
+                       limits = c(0, max(merged$population) + 1),
+                       breaks = c(0, 1000000, 5000000, 10000000, 20000000, 30000000, 40000000, max(merged$population) + 1))
+
+print(pop)
+
+```
+Interactive map
+
+```{r}
+
+indo_map <- leaflet() %>%
+  addTiles() %>%
+  setView(lng = 118.25, lat = 0.25, zoom = 4) 
+
+# Add points and labels
+indo_map <- indo_map %>%
+  addCircleMarkers(
+    data = indonesia,
+    lng = ~longitude,
+    lat = ~latitude,
+    color = "purple",
+    radius = 5,
+    opacity = 0.8
+  ) %>%
+   addLabelOnlyMarkers(data = indonesia,
+                          lng = ~longitude,
+                          lat = ~latitude,
+                          label = ~paste(woe_label, "<br>Population: ", population),
+                          labelOptions = labelOptions(
+                            style = list("font-weight" = "normal", padding = "3px 8px"),
+                            textsize = "15px",
+                            direction = "auto"
+    )
+  )
+
+# Add a legend
+indo_map <- indo_map %>%
+  addLegend("bottomright", colors = "purple", labels = "Points", title = NULL)
+
+indo_map
+
+```
+
+Tidy Table
+```{r}
+compare <- read_csv("compare.csv")
+
+library(tidyr)
+library(dplyr)
+
+
+tidy_compare <- compare %>%
+  gather(key = "Category", value = "Value", -Country) %>%
+  spread(key = "Country", value = "Value")
+
+tidy_compare$Category <- as.factor(tidy_compare$Category)
+
+# Print the tidy data
+print(tidy_compare)
+
+
+```
+
+Line Graph
+```{r}
+imr <- read_csv("IMR.csv")
+
+# Reshape data for ggplot
+imr_long <- tidyr::gather(imr, key = "year", value = "population", -state)
+
+# Plotting time series by state and year with different colors
+ggplot(imr_long, aes(x = state, y = population, color = year, group = year)) +
+  geom_line() +
+  labs(x = "State", y = "Value", title = "Time Series Across States") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 60, vjust = 1, hjust = 1, size = 8))
+
+```
+
